@@ -1,0 +1,50 @@
+NETWORK="task3"
+SUBNET="task3-subnet"
+
+yc vpc network create --name $NETWORK
+
+NETWORK_ID=$(yc vpc network get --name $NETWORK | head -n 1 | cut -d ' ' -f 2)
+
+yc vpc subnet create --name $SUBNET --network-id $NETWORK_ID --range "192.168.0.0/24" --zone "ru-central1-a"
+
+SSH_KEY_PATH="$HOME/.ssh/id_rsa_task3"
+ssh-keygen -t rsa -b 2048 -f $SSH_KEY_PATH -N ""
+
+VM_NAME="task3-vm"
+VM_USERNAME="ipiris"
+
+IMAGE_ID=$(yc compute image list --folder-id standard-images | grep " ubuntu-22-04-lts-v2024" | head -n 1 | cut -d ' ' -f 2)
+
+cat <<EOF > cloud-config.yaml
+#cloud-config
+users:
+  - name: $VM_USERNAME
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh-authorized-keys:
+      - $(cat "$SSH_KEY_PATH.pub")
+EOF
+
+yc compute instance create \
+  --name $VM_NAME \
+  --zone ru-central1-a \
+  --platform standard-v3 \
+  --cores 2 \
+  --memory 4GB \
+  --create-boot-disk size=20,type=network-ssd,image-id=$IMAGE_ID \
+  --network-interface subnet-name=$SUBNET,nat-ip-version=ipv4 \
+  --metadata-from-file user-data=cloud-config.yaml
+
+PUBLIC_IP=$(yc compute instance get $VM_NAME | grep " address: " | tail -n 1 | xargs | cut -d ' ' -f 2)
+
+
+# использовал image другого приложения, чтобы не было ошибок внутри него
+ssh -T -o StrictHostKeyChecking=no -i $SSH_KEY_PATH $VM_USERNAME@$PUBLIC_IP << 'EOF'
+sudo apt-get update
+sudo apt-get install -y docker.io
+sudo docker run -d --rm --name sample-app -p 80:8000 crccheck/hello-world
+EOF
+
+echo "Подключение по ssh: ssh -i $SSH_KEY_PATH $VM_USERNAME@$PUBLIC_IP"
+echo "Web app: http://$PUBLIC_IP"

@@ -1,0 +1,63 @@
+generate_number() {
+    echo {0..9} | tr ' ' '\n' | sort -R | head -n 4 | tr -d '\n'
+}
+
+
+calculate_bulls_and_cows() {
+    GUESS=$1
+    BULLS=0
+    COWS=0
+
+    for ((i=0; i<4; i++)); do
+        if [[ ${GUESS:i:1} == ${SECRET_NUMBER:i:1} ]]; then
+            ((BULLS++))
+        elif [[ $SECRET_NUMBER == *${GUESS:i:1}* ]]; then
+            ((COWS++))
+        fi
+    done
+    echo "$BULLS $COWS"
+}
+
+trap 'echo "\nДля выхода введите "q" или "Q"."' SIGINT
+
+SECRET_NUMBER=$(generate_number)
+TURN=0
+HISTORY=()
+
+while true; do
+    echo -n "Введите 4-значное число с неповторяющимися цифрами (или 'q' для выхода): "
+    read USER_INPUT
+
+    if [[ $USER_INPUT =~ ^[qQ]$ ]]; then
+        echo "Выход из игры. Загаданное число: $SECRET_NUMBER"
+        exit 1
+    fi
+
+    if ! [[ $USER_INPUT =~ ^[0-9]{4}$ ]]; then
+        echo "Ошибка: Введите 4-значное число с неповторяющимися цифрами."
+        continue
+    fi
+    
+    # Проверка на уникальность цифр
+    unique_chars=$(echo "$USER_INPUT" | grep -o . | sort | uniq | wc -l)
+    if [[ $unique_chars -ne 4 ]]; then
+        echo "Ошибка: Цифры в числе не должны повторяться."
+        continue
+    fi
+
+    ((TURN++))
+    RESULT=$(calculate_bulls_and_cows "$USER_INPUT")
+    BULLS=$(echo "$RESULT" | cut -d' ' -f1)
+    COWS=$(echo "$RESULT" | cut -d' ' -f2)
+    HISTORY+=("Ход $TURN: $USER_INPUT | Быки: $BULLS, Коровы: $COWS")
+
+    for ENTRY in "${HISTORY[@]}"; do
+        echo "$ENTRY"
+    done
+
+    if [[ $BULLS -eq 4 ]]; then
+        echo "Поздравляем! Вы угадали число $SECRET_NUMBER за $TURN ходов."
+        exit 0
+    fi
+
+done
