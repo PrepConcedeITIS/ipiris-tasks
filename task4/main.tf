@@ -38,6 +38,7 @@ resource "local_file" "private_key" {
 
 resource "local_file" "cloud_config" {
   content  = <<-EOT
+    #cloud-config
     users:
       - name: ipiris
         groups: sudo
@@ -81,6 +82,10 @@ resource "yandex_compute_instance" "task4_vm" {
 
 resource "null_resource" "setup_docker" {
   depends_on = [yandex_compute_instance.task4_vm]
+
+  provisioner "local-exec" {
+    command = "sleep 120"
+  }
 
   provisioner "remote-exec" {
     inline = [
