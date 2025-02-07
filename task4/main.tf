@@ -14,15 +14,15 @@ provider "yandex" {
   zone                     = "ru-central1-a"
 }
 
-resource "yandex_vpc_network" "task4-network" {
+resource "yandex_vpc_network" "task4_network" {
   name        = "task4-network"
 }
 
-resource "yandex_vpc_subnet" "task4-subnet" {
+resource "yandex_vpc_subnet" "task4_subnet" {
   name           = "task4-subnet"
   v4_cidr_blocks = ["192.168.0.0/24"]
-  zone           = "ru-central-a"
-  network_id     = "yandex_vpc_network.task4-network.id"
+  zone           = "ru-central1-a"
+  network_id     = yandex_vpc_network.task4_network.id
 }
 
 resource "tls_private_key" "ssh_key" {
@@ -33,9 +33,10 @@ resource "tls_private_key" "ssh_key" {
 resource "local_file" "private_key" {
   content  = tls_private_key.ssh_key.private_key_openssh
   filename = "${path.module}/id_rsa_task4"
+  file_permission = "0600"
 }
 
-resource "local_file" "cloud-config" {
+resource "local_file" "cloud_config" {
   content  = <<-EOT
     users:
       - name: ipiris
@@ -45,10 +46,12 @@ resource "local_file" "cloud-config" {
         ssh_authorized_keys:
           - ${tls_private_key.ssh_key.public_key_openssh}
   EOT
-  filename = "${path.module}/cloud-config.yaml"
+  filename = "${path.module}/cloud_config.yaml"
 }
 
-resource "yandex_compute_instance" "task4-vm" {
+resource "yandex_compute_instance" "task4_vm" {
+  depends_on = [yandex_vpc_subnet.task4_subnet, yandex_vpc_network.task4_network, local_file.cloud_config]
+
   name        = "task4-vm"
   platform_id = "standard-v3"
   zone        = "ru-central1-a"
@@ -67,15 +70,18 @@ resource "yandex_compute_instance" "task4-vm" {
   }
 
   network_interface {
-    subnet_id = yandex_vpc_subnet.task4-subnet.id
+    subnet_id = yandex_vpc_subnet.task4_subnet.id
     nat       = true
   }
 
   metadata = {
-    user-data = "${file("${path.module}/cloud-config.yaml")}"
+    user-data = local_file.cloud_config.content
   }
+}
 
-  # Установка Docker и запуск контейнера
+resource "null_resource" "setup_docker" {
+  depends_on = [yandex_compute_instance.task4_vm]
+
   provisioner "remote-exec" {
     inline = [
       "sudo apt-get update",
@@ -89,15 +95,16 @@ resource "yandex_compute_instance" "task4-vm" {
       type        = "ssh"
       user        = "ipiris"
       private_key = tls_private_key.ssh_key.private_key_openssh
-      host        = yandex_compute_instance.task4-vm.network_interface[0].nat_ip_address
+      host        = yandex_compute_instance.task4_vm.network_interface[0].nat_ip_address
     }
   }
 }
 
+
 output "ssh_connection_string" {
-  value = "ssh -i id_rsa_task4 ipiris@${yandex_compute_instance.task4-vm.network_interface[0].nat_ip_address}"
+  value = "ssh -i id_rsa_task4 ipiris@${yandex_compute_instance.task4_vm.network_interface[0].nat_ip_address}"
 }
 
 output "web_app_url" {
-  value = "http://${yandex_compute_instance.task4-vm.network_interface[0].nat_ip_address}"
+  value = "http://${yandex_compute_instance.task4_vm.network_interface[0].nat_ip_address}"
 }
